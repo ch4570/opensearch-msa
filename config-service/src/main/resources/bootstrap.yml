@@ -1,0 +1,7 @@
+encrypt:
+#  key: abcdefghijklmnopqrstuvwxyz1234567890
+
+  key-store:
+    location: file:/apiEncryptionKey.jks
+    password: test1234
+    alias: apiEncryptionKey

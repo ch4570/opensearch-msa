@@ -1,0 +1,140 @@
+version: '3'
+services:
+  zookeeper:
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+    networks: 
+      my-network:
+        ipv4_address: 172.18.0.100
+  kafka:
+    image: wurstmeister/kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: 172.18.0.101
+      KAFKA_CREATE_TOPICS: "request_log"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on: 
+      - zookeeper
+    networks: 
+      my-network:
+        ipv4_address: 172.18.0.101
+
+  rabbitmq:
+    image: rabbitmq:management
+    ports:
+      - "15671:15671"
+      - "15672:15672"
+      - "5671:5671"
+      - "5672:5672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks: 
+      my-network:
+
+  config-service:
+    image: ch4570/config-service
+    ports:
+      - "8888:8888"
+    environment:
+      spring.rabbitmq.host: rabbitmq
+      spring.profiles.active: default
+    depends_on: 
+      - rabbitmq
+    networks: 
+      my-network:
+
+  discovery-service:
+    image: ch4570/discovery-service
+    ports:
+      - "8761:8761"
+    environment:
+      spring.cloud.config.uri: http://config-service:8888
+    depends_on: 
+      - config-service
+    networks: 
+      my-network:
+
+  apigateway-service:
+    image: ch4570/gateway-service
+    ports:
+      - "8000:8000"
+    environment:
+      spring.cloud.config.uri: http://config-service:8888
+      spring.rabbitmq.host: rabbitmq
+      eureka.client.serviceUrl.defaultZone: http://discovery-service:8761/eureka/
+    depends_on: 
+      - discovery-service
+      - config-service
+      - zipkin
+    networks: 
+      my-network:
+
+  postgredb:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_USER: ojt
+      POSTGRES_PASSWORD: ojt
+      POSTGRES_DB: ojt
+    ports:
+      - "5432:5432"
+    volumes:
+     - pgdata:/var/lib/postgresql/data
+    networks: 
+      my-network:
+
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+    networks: 
+      my-network:
+        ipv4_address: 172.18.0.17
+
+  api-service:
+    image: ch4570/api-service
+    environment:
+      spring.cloud.config.uri: http://config-service:8888
+      spring.rabbitmq.host: rabbitmq
+      eureka.client.serviceUrl.defaultZone: http://discovery-service:8761/eureka/
+      server.port: 30001
+    depends_on: 
+      - apigateway-service
+      - config-service
+      - zipkin
+    ports:
+      - "30001:30001"
+    networks: 
+      my-network:
+        ipv4_address: 172.18.0.12
+
+  analytics-service:
+    image: ch4570/analytics-service
+    environment:
+      spring.cloud.config.uri: http://config-service:8888
+      spring.rabbitmq.host: rabbitmq
+      eureka.client.serviceUrl.defaultZone: http://discovery-service:8761/eureka/
+      server.port: 40001
+      spring.r2dbc.url: r2dbc:postgresql://postgredb:5432/ojt?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Seoul
+    depends_on: 
+      - apigateway-service
+      - config-service
+      - postgredb
+      - zipkin
+    ports:
+     - "40001:40001"
+    networks: 
+      my-network:
+        ipv4_address: 172.18.0.13
+
+networks: 
+  my-network:
+    external: true
+    name: ecommerce-network
+
+volumes:
+  pgdata:
